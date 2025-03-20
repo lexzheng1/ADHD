@@ -1,0 +1,2553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Dyslexia-Friendly Reader</title>
+    <!-- Load OpenDyslexic font -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/open-dyslexic/1.0.0/openDyslexic.min.css" rel="stylesheet">
+    <!-- JSZip for handling ZIP archives (EPUB files are ZIP containers) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style id="base-styles">
+        :root {
+            --font-family: 'Arial', sans-serif;
+            --font-size: 18px;
+            --line-height: 1.8;
+            --letter-spacing: 0.5px;
+            --word-spacing: 2px;
+            --bg-color: #f8f4e9;
+            --text-color: #333;
+            --link-color: #1a6e9c;
+            --highlight-color: #f0e68c;
+            --sidebar-width: 280px;
+            --sidebar-bg: #2c3e50;
+            --sidebar-color: white;
+            --header-height: 60px;
+        }
+
+        body {
+            font-family: var(--font-family);
+            font-size: var(--font-size);
+            line-height: var(--line-height);
+            letter-spacing: var(--letter-spacing);
+            word-spacing: var(--word-spacing);
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            transition: all 0.3s ease;
+            overflow-x: hidden;
+        }
+
+        /* Main layout structure */
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            width: 100%;
+        }
+
+        .header {
+            height: var(--header-height);
+            background-color: var(--sidebar-bg);
+            color: var(--sidebar-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .header-title {
+            font-size: 1.2rem;
+            font-weight: bold;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: calc(100% - 100px);
+        }
+
+        .header-controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        .main-container {
+            display: flex;
+            min-height: calc(100vh - var(--header-height));
+            width: 100%;
+            margin-top: var(--header-height);
+        }
+
+        .sidebar {
+            width: var(--sidebar-width);
+            background-color: var(--sidebar-bg);
+            color: var(--sidebar-color);
+            padding: 20px;
+            height: calc(100vh - var(--header-height));
+            overflow-y: auto;
+            position: fixed;
+            top: var(--header-height);
+            left: 0;
+            z-index: 90;
+            box-sizing: border-box;
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar.collapsed {
+            transform: translateX(calc(-1 * var(--sidebar-width)));
+        }
+
+        .sidebar h2 {
+            font-size: 1.4rem;
+            margin-bottom: 20px;
+            color: white;
+        }
+
+        .sidebar-section {
+            margin-bottom: 30px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .content {
+            flex: 1;
+            padding: 30px 40px 60px 40px;
+            margin-left: var(--sidebar-width);
+            max-width: calc(100% - var(--sidebar-width));
+            box-sizing: border-box;
+            overflow-wrap: break-word;
+            word-wrap: break-word;
+            hyphens: auto;
+            transition: margin-left 0.3s ease;
+        }
+
+        .content.full-width {
+            margin-left: 0;
+            max-width: 100%;
+        }
+
+        /* Typography */
+        h1, h2, h3, h4 {
+            clear: both;
+            color: #2c3e50;
+            margin-top: 1.5em;
+            margin-bottom: 0.8em;
+            line-height: 1.4;
+            max-width: 100%;
+            overflow-wrap: break-word;
+        }
+
+        h1 {
+            font-size: 2rem;
+            border-bottom: 2px solid #2c3e50;
+            padding-bottom: 10px;
+        }
+
+        h2 {
+            font-size: 1.7rem;
+        }
+
+        h3 {
+            font-size: 1.4rem;
+        }
+
+        h4 {
+            font-size: 1.2rem;
+        }
+
+        p {
+            margin-bottom: 1.2em;
+            max-width: 100%;
+        }
+
+        ul, ol {
+            padding-left: 30px;
+            margin-bottom: 1.2em;
+        }
+
+        li {
+            margin-bottom: 0.5em;
+        }
+
+        a {
+            color: var(--link-color);
+            text-decoration: underline;
+        }
+
+        img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 20px auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            overflow-x: auto;
+            display: block;
+        }
+
+        th, td {
+            padding: 12px;
+            border: 1px solid #ccc;
+            text-align: left;
+        }
+
+        th {
+            background-color: #eee;
+            font-weight: bold;
+        }
+
+        /* UI Components */
+        .reading-ruler {
+            position: fixed;
+            width: 100%;
+            height: 30px;
+            background-color: rgba(255, 255, 0, 0.2);
+            pointer-events: none;
+            display: none;
+            z-index: 999;
+        }
+
+        button {
+            background-color: #2c3e50;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            margin-right: 5px;
+            margin-bottom: 5px;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: #1a252f;
+        }
+
+        select, input {
+            width: 100%;
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            background-color: white;
+            font-size: 0.9rem;
+        }
+
+        .back-to-top {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: #2c3e50;
+            color: white;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 50px;
+            text-decoration: none;
+            font-size: 1.5rem;
+            z-index: 50;
+        }
+
+        .bionic {
+            font-weight: bold;
+        }
+
+        .file-upload {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            background-color: rgba(255, 255, 255, 0.2);
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+
+        .file-upload input[type="file"] {
+            margin-bottom: 10px;
+        }
+
+        .file-upload .file-info {
+            font-size: 0.9rem;
+            color: #ddd;
+            margin-top: 5px;
+        }
+
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid white;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-left: 10px;
+            vertical-align: middle;
+            display: none;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Theme styles */
+        .theme-cream {
+            --bg-color: #f8f4e9;
+            --text-color: #333;
+            --link-color: #1a6e9c;
+        }
+
+        .theme-dark {
+            --bg-color: #2c2c2c;
+            --text-color: #e0e0e0;
+            --link-color: #7cb9e8;
+        }
+
+        .theme-blue {
+            --bg-color: #edf6ff;
+            --text-color: #333;
+            --link-color: #1a6e9c;
+        }
+
+        .theme-green {
+            --bg-color: #e8f5e9;
+            --text-color: #333;
+            --link-color: #2e7d32;
+        }
+
+        /* Progress bar */
+        .progress-container {
+            width: 100%;
+            height: 5px;
+            background-color: #ccc;
+            position: fixed;
+            top: var(--header-height);
+            left: 0;
+            z-index: 1001;
+        }
+
+        .progress-bar {
+            height: 5px;
+            background-color: #4CAF50;
+            width: 0%;
+        }
+
+        /* Welcome Screen */
+        #welcome-screen {
+            text-align: center;
+            padding: 40px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        #welcome-screen h1 {
+            font-size: 2.2rem;
+            margin-bottom: 30px;
+        }
+
+        #welcome-screen p {
+            font-size: 1.2rem;
+            max-width: 800px;
+            margin: 0 auto 20px auto;
+        }
+
+        .features-list {
+            text-align: left;
+            max-width: 600px;
+            margin: 30px auto;
+        }
+
+        .drop-zone {
+            border: 2px dashed #aaa;
+            border-radius: 5px;
+            padding: 40px;
+            text-align: center;
+            margin: 20px 0;
+            background-color: rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .drop-zone:hover, .drop-zone.active {
+            background-color: rgba(255, 255, 255, 0.2);
+            border-color: #fff;
+        }
+
+        .drop-zone p {
+            margin: 0;
+            font-size: 1.1rem;
+        }
+
+        /* Navigation */
+        .section-title {
+            color: #eee;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        #toc-container {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+
+        #toc-container a {
+            padding: 5px 0;
+            display: block;
+            color: #ddd;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+
+        #toc-container a:hover {
+            color: white;
+            text-decoration: underline;
+        }
+
+        #chapter-list {
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            padding: 5px;
+        }
+
+        #chapter-list button {
+            text-align: left;
+            padding: 5px;
+            margin: 2px 0;
+            width: 100%;
+            background-color: transparent;
+            border: none;
+            color: #ddd;
+        }
+
+        #chapter-list button:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        #chapter-list button.active {
+            background-color: rgba(255, 255, 255, 0.2);
+            font-weight: bold;
+        }
+
+        /* Messages */
+        .error-message {
+            color: #ff6b6b;
+            background-color: rgba(255, 107, 107, 0.1);
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+
+        .info-message {
+            color: #ddd;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+
+        /* Navigation Controls */
+        .chapter-navigation {
+            display: flex;
+            justify-content: space-between;
+            margin: 20px 0;
+        }
+
+        /* Custom Font System */
+        #custom-font-section {
+            margin-top: 20px;
+        }
+
+        #custom-font-url {
+            width: 100%;
+            margin-bottom: 10px;
+        }
+
+        #custom-font-name {
+            width: 100%;
+            margin-bottom: 10px;
+        }
+
+        .font-list {
+            margin-top: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            padding: 10px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .font-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .font-item:last-child {
+            border-bottom: none;
+        }
+
+        .font-name {
+            color: #ddd;
+        }
+
+        .remove-font {
+            background-color: #e74c3c;
+            padding: 2px 5px;
+            font-size: 0.8rem;
+        }
+
+        .remove-font:hover {
+            background-color: #c0392b;
+        }
+
+        /* Configuration File Management */
+        .config-management {
+            margin-top: 20px;
+        }
+
+        /* File Browser */
+        .file-browser {
+            background-color: white;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 20px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .file-browser-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .file-search {
+            width: 300px;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .file-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+            display: table;
+        }
+
+        .file-table th {
+            background-color: #f5f5f5;
+            padding: 10px;
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .file-table th:hover {
+            background-color: #e0e0e0;
+        }
+
+        .file-table td {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .file-table tr:hover {
+            background-color: #f9f9f9;
+        }
+
+        .file-icon {
+            width: 20px;
+            text-align: center;
+            margin-right: 5px;
+        }
+
+        .file-name {
+            display: flex;
+            align-items: center;
+        }
+
+        .file-name a {
+            text-decoration: none;
+            color: #1a6e9c;
+            display: flex;
+            align-items: center;
+        }
+
+        .file-name a:hover {
+            text-decoration: underline;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 15px;
+        }
+
+        .pagination-info {
+            color: #666;
+        }
+
+        .pagination-controls button {
+            background-color: #f5f5f5;
+            color: #333;
+            border: 1px solid #ddd;
+            padding: 5px 10px;
+            margin: 0 5px;
+        }
+
+        .pagination-controls button:hover {
+            background-color: #e0e0e0;
+        }
+
+        .pagination-controls button:disabled {
+            background-color: #f5f5f5;
+            color: #aaa;
+            cursor: not-allowed;
+        }
+
+        /* Breadcrumb Navigation */
+        .breadcrumb {
+            display: flex;
+            flex-wrap: wrap;
+            padding: 10px 0;
+            list-style: none;
+            margin: 0 0 15px 0;
+        }
+
+        .breadcrumb-item {
+            display: flex;
+            align-items: center;
+        }
+
+        .breadcrumb-item a {
+            color: #1a6e9c;
+            text-decoration: none;
+        }
+
+        .breadcrumb-item a:hover {
+            text-decoration: underline;
+        }
+
+        .breadcrumb-divider {
+            margin: 0 10px;
+            color: #666;
+        }
+
+        /* Mobile Styles */
+        @media (max-width: 992px) {
+            :root {
+                --sidebar-width: 260px;
+            }
+            
+            .sidebar {
+                width: var(--sidebar-width);
+            }
+            
+            .content {
+                margin-left: var(--sidebar-width);
+                max-width: calc(100% - var(--sidebar-width));
+            }
+        }
+
+        @media (max-width: 768px) {
+            :root {
+                --header-height: 50px;
+                --sidebar-width: 280px;
+            }
+            
+            .header-title {
+                font-size: 1rem;
+            }
+            
+            .sidebar {
+                width: var(--sidebar-width);
+                transform: translateX(calc(-1 * var(--sidebar-width)));
+                box-shadow: 2px 0 10px rgba(0,0,0,0.2);
+            }
+            
+            .sidebar.open {
+                transform: translateX(0);
+            }
+            
+            .content {
+                margin-left: 0;
+                max-width: 100%;
+                padding: 20px;
+            }
+
+            #menu-toggle {
+                display: block;
+            }
+            
+            h1 { font-size: 1.8rem; }
+            h2 { font-size: 1.5rem; }
+            h3 { font-size: 1.3rem; }
+            h4 { font-size: 1.1rem; }
+            
+            .file-browser-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .file-search {
+                width: 100%;
+                margin-top: 10px;
+            }
+            
+            .file-table th:nth-child(3), 
+            .file-table td:nth-child(3) {
+                display: none;
+            }
+        }
+
+        @media (max-width: 480px) {
+            :root {
+                --font-size: 16px;
+            }
+            
+            .header {
+                padding: 0 10px;
+            }
+            
+            .content {
+                padding: 15px;
+            }
+            
+            .back-to-top {
+                width: 40px;
+                height: 40px;
+                line-height: 40px;
+                font-size: 1.2rem;
+                bottom: 10px;
+                right: 10px;
+            }
+            
+            .file-browser {
+                padding: 10px;
+            }
+        }
+
+        /* Touch-friendly controls */
+        @media (pointer: coarse) {
+            button, select, input {
+                min-height: 44px; /* Minimum touch target size */
+            }
+            
+            .sidebar .control-group {
+                margin-bottom: 20px;
+            }
+            
+            #toc-container a {
+                padding: 10px 0;
+            }
+            
+            #chapter-list button {
+                padding: 10px 5px;
+            }
+        }
+    </style>
+    <!-- Custom Font Styles will be injected here -->
+    <style id="custom-font-styles"></style>
+</head>
+<body class="theme-cream">
+    <div class="progress-container">
+        <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <div class="reading-ruler" id="readingRuler"></div>
+    
+    <div class="app-container">
+        <header class="header">
+            <button id="menu-toggle" aria-label="Toggle menu">☰</button>
+            <div class="header-title" id="header-title">Enhanced Dyslexia-Friendly Reader</div>
+            <div class="header-controls">
+                <button id="header-settings" aria-label="Settings">⚙️</button>
+                <div class="spinner" id="loading-spinner"></div>
+            </div>
+        </header>
+        
+        <div class="main-container">
+            <div class="sidebar" id="sidebar">
+                <h2>Reading Settings</h2>
+                
+                <div class="sidebar-section">
+                    <div class="file-upload">
+                        <input type="file" id="file-input" accept=".txt,.md,.epub,.text,text/plain,text/markdown,application/epub+zip">
+                        <div class="file-info">Upload a text file (.txt, .md) or EPUB file (.epub)</div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <button id="example-text">Load Example Text</button>
+                        <button id="browse-server-files">Browse Server Files</button>
+                    </div>
+                    
+                    <div id="epub-navigation" style="display: none;">
+                        <div class="section-title">EPUB Chapters</div>
+                        <div id="chapter-list">
+                            <!-- Chapters will be listed here -->
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="sidebar-section">
+                    <div class="section-title">Text Appearance</div>
+                    
+                    <div class="control-group">
+                        <label for="font-select">Font</label>
+                        <select id="font-select">
+                            <option value="'OpenDyslexic', sans-serif">OpenDyslexic</option>
+                            <option value="'Comic Sans MS', sans-serif">Comic Sans MS</option>
+                            <option value="'Arial', sans-serif" selected>Arial</option>
+                            <option value="'Verdana', sans-serif">Verdana</option>
+                            <option value="'Tahoma', sans-serif">Tahoma</option>
+                            <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                        </select>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="font-size">Font Size: <span id="font-size-val">18px</span></label>
+                        <input type="range" id="font-size" min="14" max="28" value="18" step="1">
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="line-height">Line Height: <span id="line-height-val">1.8</span></label>
+                        <input type="range" id="line-height" min="1.4" max="2.6" value="1.8" step="0.1">
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="letter-spacing">Letter Spacing: <span id="letter-spacing-val">0.5px</span></label>
+                        <input type="range" id="letter-spacing" min="0" max="3" value="0.5" step="0.1">
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="word-spacing">Word Spacing: <span id="word-spacing-val">2px</span></label>
+                        <input type="range" id="word-spacing" min="0" max="10" value="2" step="0.5">
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="theme-select">Color Theme</label>
+                        <select id="theme-select">
+                            <option value="theme-cream" selected>Cream</option>
+                            <option value="theme-dark">Dark</option>
+                            <option value="theme-blue">Blue</option>
+                            <option value="theme-green">Green</option>
+                        </select>
+                    </div>
+                    
+                    <div class="control-group" id="custom-font-section">
+                        <div class="section-title">Custom Fonts</div>
+                        <input type="text" id="custom-font-name" placeholder="Font name (e.g., 'My Font')">
+                        <input type="text" id="custom-font-url" placeholder="Web font URL (Google Fonts URL, etc.)">
+                        <button id="add-custom-font">Add Font</button>
+                        
+                        <div class="font-list" id="custom-font-list">
+                            <!-- Custom fonts will be listed here -->
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="sidebar-section">
+                    <div class="section-title">Reading Aids</div>
+                    
+                    <div class="control-group">
+                        <button id="toggle-bionic">Toggle Bionic Reading</button>
+                    </div>
+                    
+                    <div class="control-group">
+                        <button id="toggle-ruler">Toggle Reading Ruler</button>
+                    </div>
+                    
+                    <div class="control-group">
+                        <button id="read-aloud">Read Aloud</button>
+                        <button id="stop-reading" style="display:none;">Stop Reading</button>
+                    </div>
+                </div>
+                
+                <div class="sidebar-section">
+                    <div class="section-title">Table of Contents</div>
+                    <div id="toc-container">
+                        <!-- Table of contents will be generated here -->
+                    </div>
+                </div>
+                
+                <div class="sidebar-section">
+                    <div class="section-title">Configuration</div>
+                    <div class="config-management">
+                        <button id="save-config">Save Settings</button>
+                        <button id="load-config">Load Settings</button>
+                        <button id="reset-settings">Reset All Settings</button>
+                    </div>
+                </div>
+                
+                <div class="sidebar-section">
+                    <h2>Guide</h2>
+                    <p style="font-size: 14px; color: #ddd;">
+                        1. Upload a text or EPUB file using the button above<br>
+                        2. Browse server files with the "Browse Server Files" button<br>
+                        3. Try different fonts like OpenDyslexic<br>
+                        4. Adjust spacing for comfort<br>
+                        5. Use reading ruler to focus on current lines<br>
+                        6. Use bionic reading to highlight word starts
+                    </p>
+                </div>
+            </div>
+            
+            <div class="content" id="content">
+                <div id="welcome-screen">
+                    <h1>Enhanced Dyslexia-Friendly Reader</h1>
+                    <p>This tool makes reading easier by converting text and EPUB files into a dyslexia-friendly format with customizable settings.</p>
+                    
+                    <div id="file-browser" class="file-browser" style="display: none;">
+                        <div class="file-browser-header">
+                            <h2>Server Files</h2>
+                            <input type="text" class="file-search" id="file-search" placeholder="Search files...">
+                        </div>
+                        
+                        <div class="breadcrumb" id="breadcrumb">
+                            <div class="breadcrumb-item"><a href="#" data-path="">Home</a></div>
+                        </div>
+                        
+                        <table class="file-table" id="file-table">
+                            <thead>
+                                <tr>
+                                    <th data-sort="name">Name</th>
+                                    <th data-sort="type">Type</th>
+                                    <th data-sort="size">Size</th>
+                                    <th data-sort="date">Modified</th>
+                                </tr>
+                            </thead>
+                            <tbody id="file-list">
+                                <!-- Files will be listed here -->
+                            </tbody>
+                        </table>
+                        
+                        <div class="pagination" id="pagination">
+                            <div class="pagination-info">Showing <span id="showing-start">1</span>-<span id="showing-end">10</span> of <span id="total-files">0</span> files</div>
+                            <div class="pagination-controls">
+                                <button id="prev-page" disabled>Previous</button>
+                                <button id="next-page" disabled>Next</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="drop-zone" id="drop-zone">
+                        <p>Drag & drop a text or EPUB file here</p>
+                        <p>or</p>
+                        <button id="browse-files">Browse Files</button>
+                        <button id="show-server-files">Browse Server Files</button>
+                    </div>
+                    
+                    <div class="features-list">
+                        <h3>Features:</h3>
+                        <ul>
+                            <li>Support for TXT, MD, and EPUB files</li>
+                            <li>Browse files from the server</li>
+                            <li>Dyslexia-friendly fonts (OpenDyslexic, Comic Sans MS, and more)</li>
+                            <li>Add your own custom web fonts</li>
+                            <li>Adjustable text size, spacing, and color themes</li>
+                            <li>Bionic reading mode (highlights the first half of each word)</li>
+                            <li>Reading ruler to help follow text lines</li>
+                            <li>Text-to-speech functionality</li>
+                            <li>Automatic table of contents generation</li>
+                            <li>EPUB chapter navigation</li>
+                            <li>Save and load your preferred settings</li>
+                            <li>Mobile-friendly interface with collapsible menu</li>
+                        </ul>
+                    </div>
+                    
+                    <p><strong>Start by uploading a file, browsing server files, or trying the example text.</strong></p>
+                    <p>You can also try the tool with an <a href="#" id="sample-text-link">example text</a>.</p>
+                </div>
+                
+                <div id="text-content">
+                    <!-- Parsed content will appear here -->
+                </div>
+                
+                <div class="chapter-navigation" id="chapter-navigation" style="display: none;">
+                    <button id="prev-chapter" disabled>← Previous Chapter</button>
+                    <button id="next-chapter" disabled>Next Chapter →</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <a href="#" class="back-to-top" id="backToTop">↑</a>
+    
+    <script>
+        // ====================================
+        // CORE VARIABLES
+        // ====================================
+        
+        // DOM elements - UI Controls
+        const fontSelect = document.getElementById('font-select');
+        const fontSizeSlider = document.getElementById('font-size');
+        const fontSizeVal = document.getElementById('font-size-val');
+        const lineHeightSlider = document.getElementById('line-height');
+        const lineHeightVal = document.getElementById('line-height-val');
+        const letterSpacingSlider = document.getElementById('letter-spacing');
+        const letterSpacingVal = document.getElementById('letter-spacing-val');
+        const wordSpacingSlider = document.getElementById('word-spacing');
+        const wordSpacingVal = document.getElementById('word-spacing-val');
+        const themeSelect = document.getElementById('theme-select');
+        const toggleBionicBtn = document.getElementById('toggle-bionic');
+        const toggleRulerBtn = document.getElementById('toggle-ruler');
+        const readAloudBtn = document.getElementById('read-aloud');
+        const stopReadingBtn = document.getElementById('stop-reading');
+        const resetSettingsBtn = document.getElementById('reset-settings');
+        const customFontUrl = document.getElementById('custom-font-url');
+        const customFontName = document.getElementById('custom-font-name');
+        const addCustomFontBtn = document.getElementById('add-custom-font');
+        const customFontList = document.getElementById('custom-font-list');
+        const customFontStyles = document.getElementById('custom-font-styles');
+        const saveConfigBtn = document.getElementById('save-config');
+        const loadConfigBtn = document.getElementById('load-config');
+        
+        // DOM elements - Layout
+        const readingRuler = document.getElementById('readingRuler');
+        const contentContainer = document.getElementById('content');
+        const textContentContainer = document.getElementById('text-content');
+        const welcomeScreen = document.getElementById('welcome-screen');
+        const backToTopBtn = document.getElementById('backToTop');
+        const progressBar = document.getElementById('progressBar');
+        const fileInput = document.getElementById('file-input');
+        const exampleTextBtn = document.getElementById('example-text');
+        const sampleTextLink = document.getElementById('sample-text-link');
+        const tocContainer = document.getElementById('toc-container');
+        const dropZone = document.getElementById('drop-zone');
+        const browseFilesBtn = document.getElementById('browse-files');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const menuToggleBtn = document.getElementById('menu-toggle');
+        const headerSettingsBtn = document.getElementById('header-settings');
+        const sidebar = document.getElementById('sidebar');
+        const headerTitle = document.getElementById('header-title');
+        const epubNavigation = document.getElementById('epub-navigation');
+        const chapterList = document.getElementById('chapter-list');
+        const chapterNavigation = document.getElementById('chapter-navigation');
+        const prevChapterBtn = document.getElementById('prev-chapter');
+        const nextChapterBtn = document.getElementById('next-chapter');
+
+        // File Browser Elements
+        const fileBrowser = document.getElementById('file-browser');
+        const browseServerFilesBtn = document.getElementById('browse-server-files');
+        const showServerFilesBtn = document.getElementById('show-server-files');
+        const fileTable = document.getElementById('file-table');
+        const fileList = document.getElementById('file-list');
+        const fileSearch = document.getElementById('file-search');
+        const breadcrumb = document.getElementById('breadcrumb');
+        const prevPageBtn = document.getElementById('prev-page');
+        const nextPageBtn = document.getElementById('next-page');
+        const showingStart = document.getElementById('showing-start');
+        const showingEnd = document.getElementById('showing-end');
+        const totalFiles = document.getElementById('total-files');
+
+        // Speech synthesis variables
+        let speechSynthesis = window.speechSynthesis;
+        let utterance = null;
+        let currentParagraphIndex = 0;
+        let paragraphs = [];
+        
+        // Application state
+        let isBionicEnabled = false;
+        let headings = [];
+        let customFonts = [];
+        let appConfig = {
+            font: "'Arial', sans-serif",
+            fontSize: "18",
+            lineHeight: "1.8",
+            letterSpacing: "0.5",
+            wordSpacing: "2",
+            theme: "theme-cream",
+            bionicReading: false,
+            customFonts: []
+        };
+        
+        // EPUB specific variables
+        let currentEpub = null;
+        let epubChapters = [];
+        let currentChapterIndex = 0;
+        
+        // File Browser state
+        let currentFiles = [];
+        let filteredFiles = [];
+        let currentPath = '';
+        let currentPage = 1;
+        let filesPerPage = 10;
+        let sortColumn = 'name';
+        let sortDirection = 'asc';
+        let searchQuery = '';
+        const serverFilesPath = '/files/'; // Path to the server files directory
+
+        // ====================================
+        // INITIALIZATION & SETTINGS
+        // ====================================
+        
+        // Initialize settings and UI
+        function initApp() {
+            // Initialize UI components
+            initializeUI();
+            
+            // Load settings from URL parameters if available
+            loadSettingsFromURL();
+            
+            // Apply settings to the UI
+            applySettings();
+            
+            // Set up event listeners
+            setupEventListeners();
+        }
+        
+        // Initialize UI components and state
+        function initializeUI() {
+            // Set initial values for display elements
+            fontSizeVal.textContent = `${fontSizeSlider.value}px`;
+            lineHeightVal.textContent = lineHeightSlider.value;
+            letterSpacingVal.textContent = `${letterSpacingSlider.value}px`;
+            wordSpacingVal.textContent = `${wordSpacingSlider.value}px`;
+            
+            // Show/hide mobile menu toggle based on screen size
+            updateMenuToggleVisibility();
+            
+            // Hide chapter navigation initially
+            chapterNavigation.style.display = 'none';
+            
+            // Set loading spinner to follow mouse on mobile
+            if (window.innerWidth <= 768) {
+                sidebar.classList.add('collapsed');
+                contentContainer.classList.add('full-width');
+            }
+        }
+        
+        // Apply current settings to the UI and CSS
+        function applySettings() {
+            // Update UI controls to match configuration
+            fontSelect.value = appConfig.font;
+            fontSizeSlider.value = appConfig.fontSize;
+            lineHeightSlider.value = appConfig.lineHeight;
+            letterSpacingSlider.value = appConfig.letterSpacing;
+            wordSpacingSlider.value = appConfig.wordSpacing;
+            themeSelect.value = appConfig.theme;
+            
+            // Update display values
+            fontSizeVal.textContent = `${appConfig.fontSize}px`;
+            lineHeightVal.textContent = appConfig.lineHeight;
+            letterSpacingVal.textContent = `${appConfig.letterSpacing}px`;
+            wordSpacingVal.textContent = `${appConfig.wordSpacing}px`;
+            
+            // Apply CSS variables
+            document.documentElement.style.setProperty('--font-family', appConfig.font);
+            document.documentElement.style.setProperty('--font-size', `${appConfig.fontSize}px`);
+            document.documentElement.style.setProperty('--line-height', appConfig.lineHeight);
+            document.documentElement.style.setProperty('--letter-spacing', `${appConfig.letterSpacing}px`);
+            document.documentElement.style.setProperty('--word-spacing', `${appConfig.wordSpacing}px`);
+            document.body.className = appConfig.theme;
+            
+            // Apply bionic reading if enabled
+            isBionicEnabled = appConfig.bionicReading;
+            if (isBionicEnabled && textContentContainer.innerHTML.trim() !== '') {
+                applyBionicReading();
+            }
+            
+            // Load custom fonts
+            loadCustomFonts();
+        }
+        
+        // Generate URL with current settings
+        function generateSettingsURL() {
+            const url = new URL(window.location.href);
+            url.searchParams.set('font', encodeURIComponent(appConfig.font));
+            url.searchParams.set('fontSize', appConfig.fontSize);
+            url.searchParams.set('lineHeight', appConfig.lineHeight);
+            url.searchParams.set('letterSpacing', appConfig.letterSpacing);
+            url.searchParams.set('wordSpacing', appConfig.wordSpacing);
+            url.searchParams.set('theme', appConfig.theme);
+            url.searchParams.set('bionicReading', appConfig.bionicReading);
+            
+            // Add custom fonts if any exist
+            if (appConfig.customFonts.length > 0) {
+                url.searchParams.set('customFonts', JSON.stringify(appConfig.customFonts));
+            }
+            
+            return url.toString();
+        }
+        
+        // Load settings from URL parameters
+        function loadSettingsFromURL() {
+            const urlParams = new URLSearchParams(window.location.search);
+            
+            if (urlParams.has('font')) appConfig.font = decodeURIComponent(urlParams.get('font'));
+            if (urlParams.has('fontSize')) appConfig.fontSize = urlParams.get('fontSize');
+            if (urlParams.has('lineHeight')) appConfig.lineHeight = urlParams.get('lineHeight');
+            if (urlParams.has('letterSpacing')) appConfig.letterSpacing = urlParams.get('letterSpacing');
+            if (urlParams.has('wordSpacing')) appConfig.wordSpacing = urlParams.get('wordSpacing');
+            if (urlParams.has('theme')) appConfig.theme = urlParams.get('theme');
+            if (urlParams.has('bionicReading')) appConfig.bionicReading = urlParams.get('bionicReading') === 'true';
+            
+            // Load custom fonts if they exist in URL
+            if (urlParams.has('customFonts')) {
+                try {
+                    appConfig.customFonts = JSON.parse(urlParams.get('customFonts'));
+                } catch (e) {
+                    console.error('Error parsing custom fonts from URL:', e);
+                    appConfig.customFonts = [];
+                }
+            }
+            
+            // Check if a file path is specified in the URL
+            if (urlParams.has('file')) {
+                const filePath = decodeURIComponent(urlParams.get('file'));
+                loadFileFromServer(filePath);
+            }
+        }
+        
+        // Update settings based on current UI values
+        function updateSettingsFromUI() {
+            appConfig.font = fontSelect.value;
+            appConfig.fontSize = fontSizeSlider.value;
+            appConfig.lineHeight = lineHeightSlider.value;
+            appConfig.letterSpacing = letterSpacingSlider.value;
+            appConfig.wordSpacing = wordSpacingSlider.value;
+            appConfig.theme = themeSelect.value;
+            appConfig.bionicReading = isBionicEnabled;
+            
+            // Custom fonts are already tracked in appConfig.customFonts
+        }
+        
+        // Save current settings as a downloadable JSON file
+        function saveSettingsToFile() {
+            // Update config with current UI values
+            updateSettingsFromUI();
+            
+            // Create a Blob with the settings
+            const settingsBlob = new Blob(
+                [JSON.stringify(appConfig, null, 2)],
+                { type: 'application/json' }
+            );
+            
+            // Create a download link
+            const downloadLink = document.createElement('a');
+            downloadLink.href = URL.createObjectURL(settingsBlob);
+            downloadLink.download = 'reader-settings.json';
+            
+            // Trigger download
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+        }
+        
+        // Load settings from a JSON file
+        function loadSettingsFromFile() {
+            // Create a file input element
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = 'application/json';
+            
+            // Set up file loading
+            fileInput.onchange = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const loadedConfig = JSON.parse(event.target.result);
+                        
+                        // Update app config with loaded settings
+                        appConfig = {
+                            ...appConfig, // Keep default values for any missing properties
+                            ...loadedConfig // Override with loaded values
+                        };
+                        
+                        // Apply the loaded settings
+                        applySettings();
+                        
+                        // Update URL with new settings
+                        const newUrl = generateSettingsURL();
+                        window.history.replaceState({}, '', newUrl);
+                        
+                        alert('Settings loaded successfully!');
+                    } catch (error) {
+                        console.error('Error loading settings:', error);
+                        alert('Error loading settings. Please make sure you selected a valid settings file.');
+                    }
+                };
+                reader.readAsText(file);
+            };
+            
+            // Trigger file selection
+            document.body.appendChild(fileInput);
+            fileInput.click();
+            document.body.removeChild(fileInput);
+        }
+        
+        // Reset all settings to default values
+        function resetSettings() {
+            // Reset to default values
+            appConfig = {
+                font: "'Arial', sans-serif",
+                fontSize: "18",
+                lineHeight: "1.8",
+                letterSpacing: "0.5", 
+                wordSpacing: "2",
+                theme: "theme-cream",
+                bionicReading: false,
+                customFonts: []
+            };
+            
+            // Apply defaults
+            applySettings();
+            
+            // Update custom font list display
+            updateCustomFontList();
+            
+            // If bionic reading was active, reload content to clear it
+            if (isBionicEnabled) {
+                isBionicEnabled = false;
+                
+                // Refresh content based on the current type
+                if (currentEpub && epubChapters.length > 0) {
+                    loadChapter(currentChapterIndex);
+                } else {
+                    const fileInputValue = fileInput.value;
+                    if (fileInputValue) {
+                        handleFileUpload();
+                    } else if (window.currentExampleText) {
+                        processTextFile(window.currentExampleText);
+                    }
+                }
+            }
+            
+            // Update URL to remove settings
+            window.history.replaceState({}, '', window.location.pathname);
+        }
+        
+        // ====================================
+        // CUSTOM FONT HANDLING
+        // ====================================
+        
+        // Add a new custom font
+        function addCustomFont() {
+            const name = customFontName.value.trim();
+            const url = customFontUrl.value.trim();
+            
+            if (!name || !url) {
+                alert('Please enter both a font name and URL.');
+                return;
+            }
+            
+            // Check if font with this name already exists
+            const existingFontIndex = appConfig.customFonts.findIndex(font => font.name === name);
+            if (existingFontIndex >= 0) {
+                // Update existing font
+                appConfig.customFonts[existingFontIndex].url = url;
+            } else {
+                // Add new font
+                appConfig.customFonts.push({ name, url });
+                
+                // Add to font select dropdown
+                const option = document.createElement('option');
+                option.value = `'${name}', sans-serif`;
+                option.textContent = name;
+                fontSelect.appendChild(option);
+            }
+            
+            // Clear input fields
+            customFontName.value = '';
+            customFontUrl.value = '';
+            
+            // Update the font list and apply styles
+            updateCustomFontList();
+            loadCustomFonts();
+            
+            // Update settings URL
+            const newUrl = generateSettingsURL();
+            window.history.replaceState({}, '', newUrl);
+        }
+        
+        // Remove a custom font
+        function removeCustomFont(name) {
+            // Remove from app config
+            appConfig.customFonts = appConfig.customFonts.filter(font => font.name !== name);
+            
+            // Remove from font select dropdown
+            const option = Array.from(fontSelect.options).find(option => option.textContent === name);
+            if (option) fontSelect.removeChild(option);
+            
+            // If currently using this font, switch to Arial
+            if (fontSelect.value === `'${name}', sans-serif`) {
+                fontSelect.value = "'Arial', sans-serif";
+                appConfig.font = "'Arial', sans-serif";
+                document.documentElement.style.setProperty('--font-family', "'Arial', sans-serif");
+            }
+            
+            // Update the font list and styles
+            updateCustomFontList();
+            loadCustomFonts();
+            
+            // Update settings URL
+            const newUrl = generateSettingsURL();
+            window.history.replaceState({}, '', newUrl);
+        }
+        
+        // Update the custom font list display
+        function updateCustomFontList() {
+            customFontList.innerHTML = '';
+            
+            if (appConfig.customFonts.length === 0) {
+                customFontList.innerHTML = '<div class="font-item">No custom fonts added</div>';
+                return;
+            }
+            
+            appConfig.customFonts.forEach(font => {
+                const fontItem = document.createElement('div');
+                fontItem.className = 'font-item';
+                
+                const fontName = document.createElement('div');
+                fontName.className = 'font-name';
+                fontName.textContent = font.name;
+                
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'remove-font';
+                removeBtn.textContent = 'Remove';
+                removeBtn.onclick = () => removeCustomFont(font.name);
+                
+                fontItem.appendChild(fontName);
+                fontItem.appendChild(removeBtn);
+                customFontList.appendChild(fontItem);
+            });
+        }
+        
+        // Load custom fonts and apply them
+        function loadCustomFonts() {
+            // Clear existing custom font styles
+            customFontStyles.innerHTML = '';
+            
+            // Add each custom font
+            appConfig.customFonts.forEach(font => {
+                const fontFace = `
+                    @font-face {
+                        font-family: '${font.name}';
+                        src: url('${font.url}');
+                        font-weight: normal;
+                        font-style: normal;
+                    }
+                `;
+                customFontStyles.innerHTML += fontFace;
+            });
+            
+            // Update the font list display
+            updateCustomFontList();
+        }
+        
+        // ====================================
+        // TEXT & FILE PROCESSING
+        // ====================================
+        
+        // Process a text file
+        function processTextFile(text) {
+            // Show loading spinner
+            loadingSpinner.style.display = 'inline-block';
+            currentChapterIndex = index;
+            
+            // Update chapter navigation buttons
+            updateChapterNavigationButtons();
+            
+            // Update active chapter in the list
+            const chapterButtons = chapterList.querySelectorAll('button');
+            chapterButtons.forEach((btn, i) => {
+                btn.classList.toggle('active', i === index);
+            });
+            
+            try {
+                const chapter = epubChapters[index];
+                const chapterFile = currentEpub.zip.file(chapter.href);
+                
+                if (!chapterFile) {
+                    throw new Error(`Chapter file not found: ${chapter.href}`);
+                }
+                
+                // Get chapter content
+                const chapterContent = await chapterFile.async('text');
+                
+                // Convert HTML content to DOM
+                const parser = new DOMParser();
+                const chapterDoc = parser.parseFromString(chapterContent, 'text/html');
+                
+                // Find the main content element (body or specific content div)
+                let contentElement = chapterDoc.body;
+                
+                // Some EPUBs use specific content divs
+                const mainDivs = chapterDoc.querySelectorAll('body > div');
+                if (mainDivs.length === 1) {
+                    contentElement = mainDivs[0];
+                }
+                
+                // Process content
+                let html = `<h1>${chapter.title || `Chapter ${index + 1}`}</h1>\n`;
+                html += contentElement.innerHTML;
+                
+                // Fix relative paths for images - this is the key part for image processing
+                const chapterDir = chapter.href.substring(0, chapter.href.lastIndexOf('/') + 1);
+                html = html.replace(/<img\s+([^>]*?)src=["'](?!http|data:)([^"']+)["']([^>]*?)>/gi, (match, prefix, src, suffix) => {
+                    // Correctly resolve the path relative to the chapter
+                    const imagePath = resolveRelativePath(chapterDir, src);
+                    // Return the image with a special data attribute to track which images need loading
+                    return `<img ${prefix}src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=" data-epub-src="${imagePath}" ${suffix}>`;
+                });
+                
+                // Insert the processed HTML
+                textContentContainer.innerHTML = html;
+                
+                // Load images asynchronously
+                await loadEpubImages();
+                
+                // Extract headings for TOC
+                extractHeadingsFromChapter();
+                
+                // Generate table of contents
+                generateTableOfContents();
+                
+                // Apply bionic reading if enabled
+                if (isBionicEnabled) {
+                    applyBionicReading();
+                }
+                
+                // Scroll to top
+                window.scrollTo(0, 0);
+                
+            } catch (error) {
+                console.error('Error loading chapter:', error);
+                textContentContainer.innerHTML = `<div class="error-message">Error loading chapter: ${error.message}</div>`;
+            } finally {
+                loadingSpinner.style.display = 'none';
+            }display = 'inline-block';
+            welcomeScreen.style.display = 'none';
+            textContentContainer.innerHTML = '';
+            epubNavigation.style.display = 'none';
+            chapterNavigation.style.display = 'none';
+            
+            // Reset EPUB state
+            currentEpub = null;
+            epubChapters = [];
+            
+            // Reset headings array
+            headings = [];
+            
+            // Update header title
+            headerTitle.textContent = 'Reading Text File';
+            
+            // Process the text after a small delay to allow the UI to update
+            setTimeout(() => {
+                const lines = text.split(/\r?\n/);
+                let html = '';
+                let inParagraph = false;
+                let inList = false;
+                let inCodeBlock = false;
+                let emptyLineCount = 0;
+                let listType = '';
+                
+                // Simple function to detect if a line might be a heading
+                function isHeading(line) {
+                    // Check for Markdown style headings
+                    if (/^#{1,6}\s+/.test(line)) return true;
+                    
+                    // Check for lines that are short, all caps, or end with colon
+                    if (line.length < 100 && (line.toUpperCase() === line || line.endsWith(':')) && line.length > 5) return true;
+                    
+                    // Check for lines with numbers at the start like "1. Introduction"
+                    if (/^\d+(\.\d+)*\s+[A-Z]/.test(line)) return true;
+                    
+                    return false;
+                }
+                
+                // Determine heading level based on line characteristics
+                function getHeadingLevel(line) {
+                    // Markdown style headings
+                    const mdMatch = line.match(/^(#{1,6})\s+/);
+                    if (mdMatch) return Math.min(mdMatch[1].length, 4);
+                    
+                    // Numbered headings like "1. Title"
+                    if (/^\d+\.\s+[A-Z]/.test(line)) return 2;
+                    
+                    // Numbered headings like "1.1. Title"
+                    if (/^\d+\.\d+\.\s+[A-Z]/.test(line)) return 3;
+                    
+                    // Short ALL CAPS lines
+                    if (line.length < 50 && line.toUpperCase() === line && line.length > 5) return 2;
+                    
+                    // Default to h3 for other heading-like lines
+                    return 3;
+                }
+                
+                // Clean up heading text by removing markers
+                function cleanHeadingText(line) {
+                    // Remove markdown heading markers
+                    line = line.replace(/^#{1,6}\s+/, '');
+                    
+                    // Clean up and return
+                    return line.trim();
+                }
+                
+                // Process each line
+                for (let i = 0; i < lines.length; i++) {
+                    let line = lines[i].trim();
+                    
+                    // Skip empty lines but count them
+                    if (line === '') {
+                        if (inParagraph) {
+                            html += '</p>\n';
+                            inParagraph = false;
+                        }
+                        if (inList) {
+                            html += listType === 'ol' ? '</ol>\n' : '</ul>\n';
+                            inList = false;
+                        }
+                        emptyLineCount++;
+                        continue;
+                    }
+                    
+                    // Code block detection (simple)
+                    if (line.startsWith('```')) {
+                        if (inCodeBlock) {
+                            html += '</code></pre>\n';
+                            inCodeBlock = false;
+                        } else {
+                            html += '<pre><code>';
+                            inCodeBlock = true;
+                        }
+                        continue;
+                    }
+                    
+                    if (inCodeBlock) {
+                        html += line + '\n';
+                        continue;
+                    }
+                    
+                    // Check if line might be a heading
+                    if (isHeading(line)) {
+                        if (inParagraph) {
+                            html += '</p>\n';
+                            inParagraph = false;
+                        }
+                        
+                        const level = getHeadingLevel(line);
+                        const cleanText = cleanHeadingText(line);
+                        const headingId = 'heading-' + headings.length;
+                        
+                        // Add to headings array for TOC
+                        headings.push({
+                            text: cleanText,
+                            level: level,
+                            id: headingId
+                        });
+                        
+                        html += `<h${level} id="${headingId}">${cleanText}</h${level}>\n`;
+                        emptyLineCount = 0;
+                        continue;
+                    }
+                    
+                    // Check for list items
+                    const bulletListMatch = line.match(/^(\s*)([\*\-\+])\s+(.+)$/);
+                    const numberedListMatch = line.match(/^(\s*)(\d+)[\.\)]\s+(.+)$/);
+                    
+                    if (bulletListMatch || numberedListMatch) {
+                        const match = bulletListMatch || numberedListMatch;
+                        const listContent = match[3];
+                        const newListType = bulletListMatch ? 'ul' : 'ol';
+                        
+                        if (!inList) {
+                            // Start a new list
+                            html += `<${newListType}>\n`;
+                            inList = true;
+                            listType = newListType;
+                        } else if (listType !== newListType) {
+                            // Change list type
+                            html += listType === 'ol' ? '</ol>\n' : '</ul>\n';
+                            html += `<${newListType}>\n`;
+                            listType = newListType;
+                        }
+                        
+                        html += `<li>${listContent}</li>\n`;
+                        emptyLineCount = 0;
+                        continue;
+                    } else if (inList) {
+                        // End the list if this is not a list item
+                        html += listType === 'ol' ? '</ol>\n' : '</ul>\n';
+                        inList = false;
+                    }
+                    
+                    // Handle regular paragraph text
+                    if (!inParagraph) {
+                        html += '<p>';
+                        inParagraph = true;
+                    } else if (emptyLineCount === 0) {
+                        // If there was no empty line, add a space
+                        html += ' ';
+                    }
+                    
+                    // Process inline markdown for bold and italic
+                    line = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+                    line = line.replace(/\*(.+?)\*/g, '<em>$1</em>');
+                    line = line.replace(/_(.+?)_/g, '<em>$1</em>');
+                    
+                    // Add the processed line
+                    html += line;
+                    emptyLineCount = 0;
+                }
+                
+                // Close any open tags
+                if (inParagraph) {
+                    html += '</p>\n';
+                }
+                
+                if (inList) {
+                    html += listType === 'ol' ? '</ol>\n' : '</ul>\n';
+                }
+                
+                if (inCodeBlock) {
+                    html += '</code></pre>\n';
+                }
+                
+                // Insert the processed HTML
+                textContentContainer.innerHTML = html;
+                
+                // Generate table of contents
+                generateTableOfContents();
+                
+                // Apply bionic reading if enabled
+                if (isBionicEnabled) {
+                    applyBionicReading();
+                }
+                
+                // Hide loading spinner
+                loadingSpinner.style.display = 'none';
+                
+                // If on mobile, collapse the sidebar after loading content
+                if (window.innerWidth <= 768) {
+                    sidebar.classList.remove('open');
+                }
+                
+                // Update progress bar
+                updateProgressBar();
+            }, 50);
+        }
+        
+        // Process an EPUB file
+        async function processEpubFile(file) {
+            // Show loading spinner
+            loadingSpinner.style.display = 'inline-block';
+            welcomeScreen.style.display = 'none';
+            textContentContainer.innerHTML = '<div class="info-message">Loading EPUB file, please wait...</div>';
+            
+            // Update header title with file name
+            headerTitle.textContent = file.name;
+            
+            try {
+                // Read the file using JSZip
+                const zip = new JSZip();
+                const epubData = await readFileAsArrayBuffer(file);
+                const loadedZip = await zip.loadAsync(epubData);
+                
+                // First, find and parse the container.xml file to locate the content.opf file
+                let containerXml = await loadedZip.file('META-INF/container.xml').async('text');
+                let rootFilePath = containerXml.match(/full-path="([^"]+)"/)[1];
+                
+                // Parse the content.opf file to get metadata and the spine
+                let contentOpf = await loadedZip.file(rootFilePath).async('text');
+                
+                // Extract the directory path from rootFilePath to resolve relative paths
+                let rootDir = rootFilePath.substring(0, rootFilePath.lastIndexOf('/') + 1);
+                
+                // Parse content.opf to get title, author, and the content files (items)
+                let parser = new DOMParser();
+                let opfDoc = parser.parseFromString(contentOpf, 'application/xml');
+                
+                // Get basic metadata
+                let title = opfDoc.querySelector('metadata title')?.textContent || 'Untitled';
+                let author = opfDoc.querySelector('metadata creator')?.textContent || 'Unknown Author';
+                
+                // Update header title with book title
+                headerTitle.textContent = title;
+                
+                // Get manifest items (all resources)
+                let manifestItems = {};
+                let items = opfDoc.querySelectorAll('manifest item');
+                items.forEach(item => {
+                    let id = item.getAttribute('id');
+                    let href = item.getAttribute('href');
+                    let mediaType = item.getAttribute('media-type');
+                    manifestItems[id] = { href, mediaType };
+                });
+                
+                // Get spine (reading order)
+                let spineItemsRefs = opfDoc.querySelectorAll('spine itemref');
+                let spine = Array.from(spineItemsRefs).map(itemref => {
+                    return itemref.getAttribute('idref');
+                });
+                
+                // Get toc reference (might be in different files depending on EPUB version)
+                let tocId = opfDoc.querySelector('spine').getAttribute('toc');
+                let ncxFilePath = tocId ? rootDir + manifestItems[tocId]?.href : null;
+                
+                // If no NCX file specified, look for nav document (EPUB3)
+                if (!ncxFilePath) {
+                    let navItem = Array.from(items).find(item => 
+                        item.hasAttribute('properties') && 
+                        item.getAttribute('properties').includes('nav')
+                    );
+                    if (navItem) {
+                        ncxFilePath = rootDir + navItem.getAttribute('href');
+                    }
+                }
+                
+                // Store EPUB information
+                currentEpub = {
+                    title,
+                    author,
+                    rootDir,
+                    manifestItems,
+                    spine,
+                    zip: loadedZip
+                };
+                
+                // Extract chapters
+                epubChapters = [];
+                
+                // Process spine items to get chapters
+                for (let i = 0; i < spine.length; i++) {
+                    let itemId = spine[i];
+                    let item = manifestItems[itemId];
+                    if (!item) continue;
+                    
+                    // Add to chapters
+                    epubChapters.push({
+                        id: itemId,
+                        href: rootDir + item.href,
+                        title: `Chapter ${i + 1}`,
+                        index: i
+                    });
+                }
+                
+                // Try to get better chapter titles from NCX file if available
+                if (ncxFilePath && loadedZip.file(ncxFilePath)) {
+                    let ncxContent = await loadedZip.file(ncxFilePath).async('text');
+                    let ncxDoc = parser.parseFromString(ncxContent, 'application/xml');
+                    
+                    // Extract navPoints (chapters) from NCX
+                    let navPoints = ncxDoc.querySelectorAll('navPoint');
+                    navPoints.forEach(navPoint => {
+                        let navLabel = navPoint.querySelector('navLabel text').textContent;
+                        let contentSrc = navPoint.querySelector('content').getAttribute('src');
+                        
+                        // The src might contain a fragment identifier (#)
+                        let srcPath = contentSrc.split('#')[0];
+                        
+                        // Find the matching chapter and update its title
+                        for (let chapter of epubChapters) {
+                            // Extract just the filename for comparison
+                            let chapterFile = chapter.href.split('/').pop();
+                            let srcFile = srcPath.split('/').pop();
+                            
+                            if (chapterFile === srcFile) {
+                                chapter.title = navLabel;
+                                break;
+                            }
+                        }
+                    });
+                }
+                
+                // Alternative TOC parsing for EPUB3 (nav document)
+                if (!ncxFilePath && epubChapters.length > 0) {
+                    // Try to find nav file from the first chapter
+                    let firstChapterContent = await loadFirstChapter();
+                    let firstChapterDoc = parser.parseFromString(firstChapterContent, 'text/html');
+                    
+                    // Look for nav element
+                    let navElement = firstChapterDoc.querySelector('nav[*|type="toc"]');
+                    if (navElement) {
+                        let navLinks = navElement.querySelectorAll('li a');
+                        navLinks.forEach((link, index) => {
+                            let href = link.getAttribute('href');
+                            let title = link.textContent;
+                            
+                            // The href might be to another file or have a fragment
+                            let hrefParts = href.split('#');
+                            let filePart = hrefParts[0] || '';
+                            
+                            // If filePart is empty, it's a link within the same file
+                            if (!filePart && index < epubChapters.length) {
+                                epubChapters[index].title = title;
+                            } else {
+                                // Find the matching chapter
+                                for (let chapter of epubChapters) {
+                                    if (chapter.href.endsWith(filePart)) {
+                                        chapter.title = title;
+                                        break;
+                                    }
+                                }
+                            }
+                        });
+                    }
+                }
+                
+                // Display chapter navigation
+                epubNavigation.style.display = 'block';
+                displayChapterList();
+                
+                // Enable chapter navigation buttons
+                chapterNavigation.style.display = 'flex';
+                updateChapterNavigationButtons();
+                
+                // Load the first chapter
+                if (epubChapters.length > 0) {
+                    currentChapterIndex = 0;
+                    loadChapter(currentChapterIndex);
+                } else {
+                    textContentContainer.innerHTML = '<div class="error-message">No readable content found in this EPUB file.</div>';
+                    loadingSpinner.style.display = 'none';
+                }
+                
+                async function loadFirstChapter() {
+                    if (epubChapters.length === 0) return '';
+                    let chapterPath = epubChapters[0].href;
+                    let chapterFile = loadedZip.file(chapterPath);
+                    if (!chapterFile) return '';
+                    return await chapterFile.async('text');
+                }
+                
+            } catch (error) {
+                console.error('Error processing EPUB:', error);
+                textContentContainer.innerHTML = `<div class="error-message">Error processing EPUB file: ${error.message}</div>`;
+                loadingSpinner.style.display = 'none';
+            }
+        }
+        
+        // Display the list of chapters in the sidebar
+        function displayChapterList() {
+            chapterList.innerHTML = '';
+            
+            epubChapters.forEach((chapter, index) => {
+                const button = document.createElement('button');
+                button.textContent = chapter.title || `Chapter ${index + 1}`;
+                button.classList.toggle('active', index === currentChapterIndex);
+                button.addEventListener('click', () => {
+                    loadChapter(index);
+                });
+                chapterList.appendChild(button);
+            });
+        }
+        
+        // Update chapter navigation buttons based on current chapter
+        function updateChapterNavigationButtons() {
+            if (!currentEpub || epubChapters.length === 0) {
+                prevChapterBtn.disabled = true;
+                nextChapterBtn.disabled = true;
+                return;
+            }
+            
+            prevChapterBtn.disabled = currentChapterIndex <= 0;
+            nextChapterBtn.disabled = currentChapterIndex >= epubChapters.length - 1;
+        }
+        
+        // Handle file upload
+        function handleFileUpload() {
+            const file = fileInput.files[0];
+            if (!file) return;
+            
+            // Reset EPUB variables if switching file types
+            currentEpub = null;
+            epubChapters = [];
+            
+            // Check file type
+            if (file.type === 'application/epub+zip' || file.name.toLowerCase().endsWith('.epub')) {
+                processEpubFile(file);
+            } else {
+                // Handle text file
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    processTextFile(e.target.result);
+                };
+                reader.onerror = function(e) {
+                    alert('Error reading file: ' + e.target.error);
+                    loadingSpinner.style.display = 'none';
+                };
+                reader.readAsText(file);
+            }
+        }
+        
+        // Load example text
+        function loadExampleText() {
+            // A sample text to demonstrate the converter
+            const exampleText = `# Understanding Dyslexia
+
+## What is Dyslexia?
+
+Dyslexia is a learning disorder that involves difficulty reading due to problems identifying speech sounds and learning how they relate to letters and words. Also called reading disability, dyslexia is a result of individual differences in areas of the brain that process language.
+
+Dyslexia is not due to problems with intelligence, hearing or vision. Most people with dyslexia have normal intelligence. Some have above-average intelligence. However, dyslexia can make it very difficult to succeed academically in the typical instructional environment.
+
+## Signs and Symptoms
+
+Signs of dyslexia can be difficult to recognize before your child enters school, but some early clues may indicate a problem. Once your child reaches school age, your child's teacher may be the first to notice a problem. Severity varies, but the condition often becomes apparent as a child starts learning to read.
+
+### Signs in School-Age Children:
+
+* Reading well below the expected level for age
+* Problems processing and understanding what is heard
+* Difficulty comprehending rapid instructions
+* Problems remembering the sequence of things
+* Difficulty seeing (and occasionally hearing) similarities and differences in letters and words
+* Inability to sound out the pronunciation of an unfamiliar word
+* Difficulty spelling
+* Trouble learning a foreign language
+
+## Causes of Dyslexia
+
+Dyslexia tends to run in families. It appears to be linked to certain genes that affect how the brain processes reading and language, as well as risk factors in the environment.
+
+### Risk Factors
+
+Dyslexia risk factors include:
+
+1. A family history of dyslexia or other learning disabilities
+2. Premature birth or low birth weight
+3. Exposure during pregnancy to nicotine, drugs, alcohol or infection that may alter brain development
+4. Individual differences in the parts of the brain that enable reading
+
+## Treatment and Support
+
+There's no cure for dyslexia. It's a lifelong condition caused by inherited traits that affect how your brain works. However, early assessment and intervention result in the best outcome. Sometimes dyslexia goes undiagnosed for years and isn't recognized until adulthood.
+
+To improve reading skills, educational techniques are used, including:
+
+* Phonics — matching letters to their sounds and recognizing letter patterns that make up words
+* Hearing and saying sounds in words (phonological awareness)
+* Understanding that words are made up of sounds that can be separated
+* Recognizing that sounds can be put together to make words
+* Identifying and using small parts of words (syllables, prefixes, suffixes)
+* Reading out loud to develop accuracy, speed and expression (fluency)
+* Building a vocabulary of recognized words
+* Finding ways to help with comprehension (understanding the text)
+
+## Technology and Tools That Help
+
+Many tools can help people with dyslexia succeed. These include:
+
+* Text-to-speech software
+* Speech recognition programs
+* Dyslexia-friendly fonts such as OpenDyslexic and Comic Sans
+* Colored overlays and rulers
+* Adjustable letter and word spacing
+* Bionic reading (highlighting parts of words)
+* Reading rulers that help focus attention on single lines
+* Digital highlighters
+* Recorders for lectures
+
+## Famous People with Dyslexia
+
+Many successful people have dyslexia. Some examples include:
+
+* Albert Einstein - Scientist
+* Leonardo da Vinci - Artist and inventor
+* Steven Spielberg - Film director
+* Richard Branson - Entrepreneur
+* Whoopi Goldberg - Actress
+* Agatha Christie - Author
+* Muhammad Ali - Boxer
+* Tom Cruise - Actor
+* Walt Disney - Filmmaker and entrepreneur
+* John Lennon - Musician
+
+*This example text is meant to demonstrate the features of the dyslexia-friendly text converter.*`;
+
+            // Save for reference if we need to reapply
+            window.currentExampleText = exampleText;
+            
+            // Reset EPUB variables
+            currentEpub = null;
+            epubChapters = [];
+            epubNavigation.style.display = 'none';
+            chapterNavigation.style.display = 'none';
+            
+            // Process the example text
+            processTextFile(exampleText);
+        }
+        
+        // ====================================
+        // SERVER FILE BROWSER
+        // ====================================
+        
+        // Show the file browser
+        function showFileBrowser() {
+            welcomeScreen.style.display = 'block';
+            fileBrowser.style.display = 'block';
+            dropZone.style.display = 'none';
+            
+            // Fetch and display files from server
+            fetchFilesFromServer(currentPath);
+        }
+        
+        // Fetch files from the server
+        async function fetchFilesFromServer(path) {
+            loadingSpinner.style.display = 'inline-block';
+            
+            try {
+                // This makes a request to a server-side script that returns the file list
+                const response = await fetch(`/api/files?path=${encodeURIComponent(path)}`);
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch files from server');
+                }
+                
+                const data = await response.json();
+                currentFiles = data.files;
+                currentPath = path;
+                
+                // Update the UI with files
+                updateFileBrowser();
+                updateBreadcrumb();
+                
+            } catch (error) {
+                console.error('Error fetching files:', error);
+                // If API fails, use sample data for demonstration
+                currentFiles = getSampleFiles(path);
+                currentPath = path;
+                
+                // Update the UI with files
+                updateFileBrowser();
+                updateBreadcrumb();
+            } finally {
+                loadingSpinner.style.display = 'none';
+            }
+        }
+        
+        // Get sample files for demonstration
+        function getSampleFiles(path) {
+            // Base files
+            if (path === '') {
+                return [
+                    { name: 'Books', type: 'directory', size: '-', modified: '2025-02-15' },
+                    { name: 'Articles', type: 'directory', size: '-', modified: '2025-02-20' },
+                    { name: 'Notes', type: 'directory', size: '-', modified: '2025-03-01' },
+                    { name: 'readme.txt', type: 'file', size: '2 KB', modified: '2025-03-05' },
+                    { name: 'example.epub', type: 'file', size: '1.5 MB', modified: '2025-03-10' }
+                ];
+            }
+            
+            // Books directory
+            if (path === 'Books') {
+                return [
+                    { name: 'Fiction', type: 'directory', size: '-', modified: '2025-02-15' },
+                    { name: 'Non-Fiction', type: 'directory', size: '-', modified: '2025-02-16' },
+                    { name: 'the_great_gatsby.epub', type: 'file', size: '1.2 MB', modified: '2025-01-20' },
+                    { name: 'pride_and_prejudice.epub', type: 'file', size: '950 KB', modified: '2025-01-21' },
+                    { name: 'moby_dick.epub', type: 'file', size: '2.3 MB', modified: '2025-01-25' }
+                ];
+            }
+            
+            // Articles directory
+            if (path === 'Articles') {
+                return [
+                    { name: 'about_dyslexia.txt', type: 'file', size: '15 KB', modified: '2025-02-10' },
+                    { name: 'reading_strategies.txt', type: 'file', size: '8 KB', modified: '2025-02-15' },
+                    { name: 'assistive_technologies.md', type: 'file', size: '12 KB', modified: '2025-02-20' },
+                    { name: 'adhd_overview.txt', type: 'file', size: '10 KB', modified: '2025-03-01' }
+                ];
+            }
+            
+            // Notes directory
+            if (path === 'Notes') {
+                return [
+                    { name: 'meeting_notes.txt', type: 'file', size: '5 KB', modified: '2025-03-01' },
+                    { name: 'research_ideas.md', type: 'file', size: '7 KB', modified: '2025-03-02' },
+                    { name: 'todo_list.txt', type: 'file', size: '2 KB', modified: '2025-03-05' }
+                ];
+            }
+            
+            // Fiction directory
+            if (path === 'Books/Fiction') {
+                return [
+                    { name: 'sherlock_holmes.epub', type: 'file', size: '1.8 MB', modified: '2025-01-15' },
+                    { name: 'frankenstein.epub', type: 'file', size: '1.1 MB', modified: '2025-01-16' },
+                    { name: 'dracula.epub', type: 'file', size: '1.5 MB', modified: '2025-01-18' }
+                ];
+            }
+            
+            // Non-Fiction directory
+            if (path === 'Books/Non-Fiction') {
+                return [
+                    { name: 'brief_history_of_time.epub', type: 'file', size: '1.7 MB', modified: '2025-01-10' },
+                    { name: 'sapiens.epub', type: 'file', size: '2.1 MB', modified: '2025-01-12' },
+                    { name: 'thinking_fast_and_slow.epub', type: 'file', size: '1.9 MB', modified: '2025-01-14' }
+                ];
+            }
+            
+            // Default to empty directory
+            return [];
+        }
+        
+        // Update the file browser with the current files
+        function updateFileBrowser() {
+            // Filter files based on search query
+            filteredFiles = currentFiles.filter(file => {
+                if (!searchQuery) return true;
+                return file.name.toLowerCase().includes(searchQuery.toLowerCase());
+            });
+            
+            // Sort the files
+            sortFiles();
+            
+            // Calculate pagination
+            const totalFilteredFiles = filteredFiles.length;
+            const totalPages = Math.ceil(totalFilteredFiles / filesPerPage);
+            
+            // Adjust current page if needed
+            if (currentPage > totalPages) {
+                currentPage = Math.max(1, totalPages);
+            }
+            
+            // Get files for the current page
+            const startIndex = (currentPage - 1) * filesPerPage;
+            const endIndex = Math.min(startIndex + filesPerPage, totalFilteredFiles);
+            const filesToDisplay = filteredFiles.slice(startIndex, endIndex);
+            
+            // Update file list
+            fileList.innerHTML = '';
+            
+            if (filesToDisplay.length === 0) {
+                fileList.innerHTML = `<tr><td colspan="4">No files found${searchQuery ? ` matching "${searchQuery}"` : ''}</td></tr>`;
+            } else {
+                filesToDisplay.forEach(file => {
+                    const row = document.createElement('tr');
+                    
+                    // Name column with icon
+                    const nameCell = document.createElement('td');
+                    const nameLink = document.createElement('a');
+                    nameLink.className = 'file-name';
+                    
+                    const icon = document.createElement('span');
+                    icon.className = 'file-icon';
+                    icon.textContent = file.type === 'directory' ? '📁' : getFileIcon(file.name);
+                    
+                    nameLink.appendChild(icon);
+                    nameLink.appendChild(document.createTextNode(file.name));
+                    
+                    if (file.type === 'directory') {
+                        // For directories, navigate to that directory when clicked
+                        nameLink.href = '#';
+                        nameLink.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            const newPath = currentPath ? `${currentPath}/${file.name}` : file.name;
+                            fetchFilesFromServer(newPath);
+                        });
+                    } else {
+                        // For files, open the file when clicked
+                        nameLink.href = '#';
+                        nameLink.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            const filePath = currentPath ? `${currentPath}/${file.name}` : file.name;
+                            loadFileFromServer(filePath);
+                        });
+                    }
+                    
+                    nameCell.appendChild(nameLink);
+                    row.appendChild(nameCell);
+                    
+                    // Type column
+                    const typeCell = document.createElement('td');
+                    typeCell.textContent = file.type === 'directory' ? 'Folder' : getFileType(file.name);
+                    row.appendChild(typeCell);
+                    
+                    // Size column
+                    const sizeCell = document.createElement('td');
+                    sizeCell.textContent = file.size;
+                    row.appendChild(sizeCell);
+                    
+                    // Modified date column
+                    const dateCell = document.createElement('td');
+                    dateCell.textContent = formatDate(file.modified);
+                    row.appendChild(dateCell);
+                    
+                    fileList.appendChild(row);
+                });
+            }
+            
+            // Update pagination info
+            showingStart.textContent = totalFilteredFiles === 0 ? '0' : startIndex + 1;
+            showingEnd.textContent = endIndex;
+            totalFiles.textContent = totalFilteredFiles;
+            
+            // Update pagination controls
+            prevPageBtn.disabled = currentPage <= 1;
+            nextPageBtn.disabled = currentPage >= totalPages;
+        }
+        
+        // Update the breadcrumb navigation
+        function updateBreadcrumb() {
+            breadcrumb.innerHTML = '';
+            
+            // Add home link
+            const homeItem = document.createElement('div');
+            homeItem.className = 'breadcrumb-item';
+            
+            const homeLink = document.createElement('a');
+            homeLink.href = '#';
+            homeLink.textContent = 'Home';
+            homeLink.setAttribute('data-path', '');
+            homeLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                fetchFilesFromServer('');
+            });
+            
+            homeItem.appendChild(homeLink);
+            breadcrumb.appendChild(homeItem);
+            
+            // If we're in a subdirectory, add path segments
+            if (currentPath) {
+                const pathParts = currentPath.split('/');
+                let currentPathSegment = '';
+                
+                pathParts.forEach((part, index) => {
+                    // Add divider
+                    const divider = document.createElement('div');
+                    divider.className = 'breadcrumb-divider';
+                    divider.textContent = '›';
+                    breadcrumb.appendChild(divider);
+                    
+                    // Add path segment
+                    const item = document.createElement('div');
+                    item.className = 'breadcrumb-item';
+                    
+                    // Update the path segment
+                    currentPathSegment = currentPathSegment ? `${currentPathSegment}/${part}` : part;
+                    
+                    // If it's the last part, make it non-clickable
+                    if (index === pathParts.length - 1) {
+                        item.textContent = part;
+                    } else {
+                        const link = document.createElement('a');
+                        link.href = '#';
+                        link.textContent = part;
+                        link.setAttribute('data-path', currentPathSegment);
+                        link.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            fetchFilesFromServer(currentPathSegment);
+                        });
+                        item.appendChild(link);
+                    }
+                    
+                    breadcrumb.appendChild(item);
+                });
+            }
+        }
+        
+        // Sort the filtered files
+        function sortFiles() {
+            filteredFiles.sort((a, b) => {
+                // Always put directories first
+                if (a.type === 'directory' && b.type !== 'directory') return -1;
+                if (a.type !== 'directory' && b.type === 'directory') return 1;
+                
+                // Sort based on selected column
+                switch (sortColumn) {
+                    case 'name':
+                        return sortDirection === 'asc' 
+                            ? a.name.localeCompare(b.name)
+                            : b.name.localeCompare(a.name);
+                    
+                    case 'type':
+                        const aType = getFileType(a.name);
+                        const bType = getFileType(b.name);
+                        return sortDirection === 'asc'
+                            ? aType.localeCompare(bType)
+                            : bType.localeCompare(aType);
+                    
+                    case 'size':
+                        // Skip size comparison for directories
+                        if (a.type === 'directory' && b.type === 'directory') {
+                            return 0;
+                        }
+                        // Parse sizes to numeric values for comparison
+                        const aSize = parseSizeToBytes(a.size);
+                        const bSize = parseSizeToBytes(b.size);
+                        return sortDirection === 'asc' ? aSize - bSize : bSize - aSize;
+                    
+                    case 'date':
+                        const aDate = new Date(a.modified);
+                        const bDate = new Date(b.modified);
+                        return sortDirection === 'asc' ? aDate - bDate : bDate - aDate;
+                    
+                    default:
+                        return 0;
+                }
+            });
+        }
+        
+        // Helper function to get file type from filename
+        function getFileType(filename) {
+            if (!filename.includes('.')) return 'File';
+            
+            const extension = filename.split('.').pop().toLowerCase();
+            
+            switch (extension) {
+                case 'txt': return 'Text File';
+                case 'md': return 'Markdown';
+                case 'epub': return 'E-Book';
+                case 'pdf': return 'PDF';
+                case 'doc':
+                case 'docx': return 'Word Document';
+                case 'xls':
+                case 'xlsx': return 'Excel Spreadsheet';
+                case 'jpg':
+                case 'jpeg':
+                case 'png':
+                case 'gif': return 'Image';
+                default: return 'File';
+            }
+        }
+        
+        // Helper function to get appropriate icon for file type
+        function getFileIcon(filename) {
+            if (!filename.includes('.')) return '📄';
+            
+            const extension = filename.split('.').pop().toLowerCase();
+            
+            switch (extension) {
+                case 'txt': return '📝';
+                case 'md': return '📋';
+                case 'epub': return '📚';
+                case 'pdf': return '📕';
+                case 'doc':
+                case 'docx': return '📄';
+                case 'xls':
+                case 'xlsx': return '📊';
+                case 'jpg':
+                case 'jpeg':
+                case 'png':
+                case 'gif': return '🖼️';
+                default: return '📄';
+            }
+        }
+        
+        // Helper function to format date consistently
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleDateString(undefined, {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+            });
+        }
+        
+        // Helper function to parse file size to bytes for sorting
+        function parseSizeToBytes(sizeString) {
+            if (sizeString === '-') return 0;
+            
+            const units = {
+                B: 1,
+                KB: 1024,
+                MB: 1024 * 1024,
+                GB: 1024 * 1024 * 1024
+            };
+            
+            const matches = sizeString.match(/^(\d+(?:\.\d+)?)\s*([KMGT]?B)$/i);
+            if (!matches) return 0;
+            
+            const [, size, unit] = matches;
+            return parseFloat(size) * (units[unit] || 1);
+        }
+        
+        // Load a file from the server
+        async function loadFileFromServer(filePath) {
+            loadingSpinner.style.display = 'inline-block';
+            
+            try {
+                // This would make a request to get the file content
+                const response = await fetch(`${serverFilesPath}${filePath}`);
+                
+                if (!response.ok) {
+                    throw new Error('Failed to load file from server');
+                }
+                
+                // Get the file content
+                const fileContent = await response.text();
+                
+                // Update URL to include the file path
+                const url = new URL(window.location.href);
+                url.searchParams.set('file', filePath);
+                window.history.pushState({}, '', url.toString());
+                
+                // Process the file based on its extension
+                const fileName = filePath.split('/').pop();
+                const extension = fileName.split('.').pop().toLowerCase();
+                
+                // Hide the welcome screen and file browser
+                welcomeScreen.style.display = 'none';
+                fileBrowser.style.display = 'none';
+                
+                // Update header title
+                headerTitle.textContent = fileName;
+                
+                if (extension === 'epub') {
+                    // For EPUB files, we need to convert the text to an array buffer
+                    const arrayBuffer = new TextEncoder().encode(fileContent).buffer;
+                    
+                    // Create a File object from the array buffer
+                    const file = new File([arrayBuffer], fileName, { type: 'application/epub+zip' });
+                    
+                    // Process the EPUB file
+                    processEpubFile(file);
+                } else {
+                    // For text files, process directly
+                    processTextFile(fileContent);
+                }
+                
+            } catch (error) {
+                console.error('Error loading file from server:', error);
+                
+                // Fallback to sample content for demo purposes
+                if (filePath.endsWith('.epub')) {
+                    alert('This is a demo. EPUB files cannot be loaded directly in this example. Please upload a file instead.');
+                } else if (filePath.endsWith('.txt') || filePath.endsWith('.md')) {
+                    // Load example text as a fallback
+                    welcomeScreen.style.display = 'none';
+                    fileBrowser.style.display = 'none';
+                    headerTitle.textContent = filePath.split('/').pop();
+                    loadExampleText();
+                }
+            } finally {
+                loadingSpinner.style.display = 'none';
+            }
+        }
+        
+        // ====================================
+        // EPUB SPECIFIC FUNCTIONS
+        // ====================================
+        
+        // Load a specific chapter from the EPUB
+        async function loadChapter(index) {
+            if (!currentEpub || index < 0 || index >= epubChapters.length) return;
+            
+            loadingSpinner.style.
